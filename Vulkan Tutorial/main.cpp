@@ -81,6 +81,12 @@ private:
 
     void cleanup()
     {
+        // no comment :(
+        if (enableValidationLayers)
+        {
+            DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+        }
+
         // destroy the instance
         vkDestroyInstance(instance, nullptr);
 
