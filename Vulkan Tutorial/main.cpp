@@ -61,6 +61,9 @@ private:
     VkDebugUtilsMessengerEXT debugMessenger;
 
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    VkDevice device;
+
+    VkQueue graphicsQueue;
 
     void initWindow()
     {
@@ -82,6 +85,7 @@ private:
         createInstance();
         setupDebugMessenger();
         pickPhysicalDevice();
+        createLogicalDevice();
     }
 
     void mainLoop()
@@ -92,6 +96,9 @@ private:
 
     void cleanup()
     {
+        // destroy the device >:)
+        vkDestroyDevice(device, nullptr);
+
         // no comment :(
         if (enableValidationLayers)
         {
@@ -302,6 +309,54 @@ private:
         }
 
         return indices;
+    }
+
+    // Logical device
+    void createLogicalDevice()
+    {
+        // this struct describes the number of queues for a single queue family
+        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+        queueCreateInfo.queueCount = 1;
+
+        // assign priorities to queues
+        float queuePriority = 1.f;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+
+        // specify the set of device features that we'll be using
+        VkPhysicalDeviceFeatures deviceFeatures{};
+
+        // filling in the main VkDeviceCreateInfo struct
+        VkDeviceCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+        // add pointers to the queue creation info and device features structs
+        createInfo.pQueueCreateInfos = &queueCreateInfo;
+        createInfo.queueCreateInfoCount = 1;
+
+        createInfo.pEnabledFeatures = &deviceFeatures;
+
+        // set the enabledLayerCount and ppEnabledLayerNames fields (optional)
+        createInfo.enabledExtensionCount = 0;
+
+        if (enableValidationLayers)
+        {
+            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+            createInfo.ppEnabledLayerNames = validationLayers.data();
+        }
+        else createInfo.enabledLayerCount = 0;
+
+        // instantiate the logical device
+        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create logical device!");
+        }
+
+        // retrieve queue handles for each queue family
+        vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
     }
 };
 
