@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <optional>
+#include <set>
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -41,7 +42,8 @@ void DestroyDebugUtilsMessengerEXT(
 struct QueueFamilyIndices
 {
     std::optional<uint32_t> graphicsFamily;
-    bool isComplete() { return graphicsFamily.has_value(); }
+    std::optional<uint32_t> presentFamily;
+    bool isComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
 };
 
 class Application
@@ -59,11 +61,13 @@ private:
 
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
+    VkSurfaceKHR surface;
 
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device;
 
     VkQueue graphicsQueue;
+    VkQueue presentQueue;
 
     void initWindow()
     {
@@ -84,6 +88,7 @@ private:
     {
         createInstance();
         setupDebugMessenger();
+        createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
     }
@@ -104,6 +109,9 @@ private:
         {
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         }
+
+        // destroying a surface
+        vkDestroySurfaceKHR(instance, surface, nullptr);
 
         // destroy the instance
         vkDestroyInstance(instance, nullptr);
@@ -303,6 +311,12 @@ private:
                 indices.graphicsFamily = i;
             }
 
+            // look for a queue family that has the capability of presenting to our window surface
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+
+            if (presentSupport) indices.presentFamily = i;
+
             if (indices.isComplete()) break;
 
             i++;
@@ -317,14 +331,20 @@ private:
         // this struct describes the number of queues for a single queue family
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-        VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-        queueCreateInfo.queueCount = 1;
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+        std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
         // assign priorities to queues
-        float queuePriority = 1.f;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        float queuePriority = 1.0f;
+        for (uint32_t queueFamily : uniqueQueueFamilies)
+        {
+            VkDeviceQueueCreateInfo queueCreateInfo{};
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = queueFamily;
+            queueCreateInfo.queueCount = 1;
+            queueCreateInfo.pQueuePriorities = &queuePriority;
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
 
         // specify the set of device features that we'll be using
         VkPhysicalDeviceFeatures deviceFeatures{};
@@ -334,8 +354,8 @@ private:
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
         // add pointers to the queue creation info and device features structs
-        createInfo.pQueueCreateInfos = &queueCreateInfo;
-        createInfo.queueCreateInfoCount = 1;
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+        createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
         createInfo.pEnabledFeatures = &deviceFeatures;
 
@@ -357,6 +377,15 @@ private:
 
         // retrieve queue handles for each queue family
         vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+    }
+
+    // Window surface
+    void createSurface()
+    {
+        if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create window surface!");
+        }
     }
 };
 
