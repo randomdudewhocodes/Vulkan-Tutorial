@@ -154,22 +154,7 @@ private:
 
     void cleanup()
     {
-        // the semaphores and fence should be cleaned up at the end of the program
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-        {
-            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-            vkDestroyFence(device, inFlightFences[i], nullptr);
-        }
-
-        // commands will be used throughout the program to draw things on the screen, so the pool should only be destroyed at the end
-        vkDestroyCommandPool(device, commandPool, nullptr);
-
-        // delete the framebuffers before the image views and render pass
-        for (auto framebuffer : swapChainFramebuffers)
-        {
-            vkDestroyFramebuffer(device, framebuffer, nullptr);
-        }
+        cleanupSwapChain();
 
         // the graphics pipeline is required for all common drawing operations, so it should also only be destroyed at the end of the program
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
@@ -180,14 +165,16 @@ private:
         // just like the pipeline layout
         vkDestroyRenderPass(device, renderPass, nullptr);
 
-        // destroy the images... one... by... one >:)
-        for (auto imageView : swapChainImageViews)
+        // the semaphores and fence should be cleaned up at the end of the program
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            vkDestroyImageView(device, imageView, nullptr);
+            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            vkDestroyFence(device, inFlightFences[i], nullptr);
         }
 
-        // clean up the swapchain
-        vkDestroySwapchainKHR(device, swapChain, nullptr);
+        // commands will be used throughout the program to draw things on the screen, so the pool should only be destroyed at the end
+        vkDestroyCommandPool(device, commandPool, nullptr);
 
         // destroy the device >:)
         vkDestroyDevice(device, nullptr);
@@ -209,6 +196,12 @@ private:
 
         // terminating GLFW
         glfwTerminate();
+
+        // delete the framebuffers before the image views and render pass
+        for (auto framebuffer : swapChainFramebuffers)
+        {
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
+        }
     }
 
     // Instance
@@ -1188,6 +1181,31 @@ private:
 
         // advance to the next frame
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    // Swap chain recreation
+    void cleanupSwapChain()
+    {
+        for (size_t i = 0; i < swapChainFramebuffers.size(); i++)
+        {
+            vkDestroyFramebuffer(device, swapChainFramebuffers[i], nullptr);
+        }
+
+        for (size_t i = 0; i < swapChainImageViews.size(); i++)
+        {
+            vkDestroyImageView(device, swapChainImageViews[i], nullptr);
+        }
+
+        vkDestroySwapchainKHR(device, swapChain, nullptr);
+    }
+
+    void recreateSwapChain()
+    {
+        vkDeviceWaitIdle(device);
+
+        createSwapChain();
+        createImageViews();
+        createFramebuffers();
     }
 };
 
