@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <limits>
 #include <algorithm>
+#include <fstream>
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -113,6 +114,7 @@ private:
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createGraphicsPipeline();
     }
 
     void mainLoop()
@@ -641,6 +643,80 @@ private:
                 throw std::runtime_error("failed to create image views!");
             }
         }
+    }
+
+    // Shader modules
+    void createGraphicsPipeline()
+    {
+        auto vertShaderCode = readFile("shaders/vert.spv");
+        auto fragShaderCode = readFile("shaders/frag.spv");
+
+        VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+        VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+        // filling in the struct for the vertex shader
+        VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+        vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+
+        // telling Vulkan in which pipeline stage the shader is going to be used
+        vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+
+        // specify the shader module containing the code
+        vertShaderStageInfo.module = vertShaderModule;
+        vertShaderStageInfo.pName = "main";
+
+        // do the same for the fragment shader
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+        // destroy them >:)
+        vkDestroyShaderModule(device, fragShaderModule, nullptr);
+        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    }
+
+    static std::vector<char> readFile(const std::string& filename)
+    {
+        // load the binary data from the files
+        // kinda surprised that ate is like... starts reading at the end of the file, not like... slay or something
+        // and binary? yeah, obviously reads as binary
+        std::ifstream file(filename, std::ios::ate | std::ios::binary);
+        if (!file.is_open()) throw std::runtime_error("failed to open file!");
+
+        // determine the size of the file and allocate a buffer
+        size_t fileSize = (size_t)file.tellg();
+        std::vector<char> buffer(fileSize);
+
+        // seek back to the beginning of the file and read all of the bytes at once
+        file.seekg(0);
+        file.read(buffer.data(), fileSize);
+
+        // close the file
+        file.close();
+
+        return buffer;
+    }
+
+    VkShaderModule createShaderModule(const std::vector<char>& code)
+    {
+        // specify a pointer to the buffer with the bytecode and the length of it
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+        // create the shader module (do i even need to explain this? it's literally in the function name)
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create shader module!");
+        }
+
+        return shaderModule;
     }
 };
 
