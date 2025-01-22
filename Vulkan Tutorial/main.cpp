@@ -90,6 +90,7 @@ private:
     VkExtent2D swapChainExtent;
     std::vector<VkImageView> swapChainImageViews;
 
+    VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
 
     void initWindow()
@@ -116,6 +117,7 @@ private:
         createLogicalDevice();
         createSwapChain();
         createImageViews();
+        createRenderPass();
         createGraphicsPipeline();
     }
 
@@ -127,8 +129,11 @@ private:
 
     void cleanup()
     {
-        // The pipeline layout will be referenced throughout the program's lifetime, so it should be destroyed at the end
+        // the pipeline layout will be referenced throughout the program's lifetime, so it should be destroyed at the end
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
+        // just like the pipeline layout
+        vkDestroyRenderPass(device, renderPass, nullptr);
 
         // destroy the images... one... by... one >:)
         for (auto imageView : swapChainImageViews)
@@ -822,6 +827,51 @@ private:
         }
 
         return shaderModule;
+    }
+
+    // Render passes
+    void createRenderPass()
+    {
+        VkAttachmentDescription colorAttachment{};
+
+        // the format of the color attachment should match the format of the swap chain images
+        colorAttachment.format = swapChainImageFormat;
+
+        // we're not doing anything with multisampling yet, so we'll stick to 1 sample
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+
+        // determine what to do with the data in the attachment before rendering and after rendering
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        // The loadOp and storeOp apply to color and depth data
+        // and stencilLoadOp / stencilStoreOp apply to stencil data
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+        // attachment references
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0;
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        // subpasses
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorAttachmentRef;
+
+        // create the render pass
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+
+        if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create render pass!");
+        }
     }
 };
 
