@@ -92,6 +92,7 @@ private:
 
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
+    VkPipeline graphicsPipeline;
 
     void initWindow()
     {
@@ -129,6 +130,9 @@ private:
 
     void cleanup()
     {
+        // the graphics pipeline is required for all common drawing operations, so it should also only be destroyed at the end of the program
+        vkDestroyPipeline(device, graphicsPipeline, nullptr);
+
         // the pipeline layout will be referenced throughout the program's lifetime, so it should be destroyed at the end
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 
@@ -782,6 +786,39 @@ private:
         if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create pipeline layout!");
+        }
+
+        // referencing the array of VkPipelineShaderStageCreateInfo structs
+        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+
+        // we reference all of the structures describing the fixed-function stage
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = nullptr; // Optional
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState;
+
+        // the pipeline layout
+        pipelineInfo.layout = pipelineLayout;
+
+        // reference to the render pass and the index of the sub pass where this graphics pipeline will be used
+        pipelineInfo.renderPass = renderPass;
+        pipelineInfo.subpass = 0;
+
+        // allows to create a new graphics pipeline by deriving from an existing pipeline
+        pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
+        pipelineInfo.basePipelineIndex = -1; // Optional
+
+        // create the graphics pipeline
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create graphics pipeline!");
         }
 
         // destroy them >:)
