@@ -12,11 +12,11 @@
 #include <limits>
 #include <algorithm>
 #include <fstream>
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <array>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
-using namespace glm;
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -73,8 +73,8 @@ struct SwapChainSupportDetails
 
 struct Vertex
 {
-    vec2 pos;
-    vec3 color;
+    glm::vec2 pos;
+    glm::vec3 color;
 
     static VkVertexInputBindingDescription getBindingDescription()
     {
@@ -122,9 +122,9 @@ struct Vertex
 
 struct UniformBufferObject
 {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
 };
 
 const std::vector<Vertex> vertices = {
@@ -184,6 +184,9 @@ private:
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
 
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets;
+
     std::vector<VkCommandBuffer> commandBuffers;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
@@ -223,6 +226,8 @@ private:
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
+        createDescriptorPool();
+        createDescriptorSets();
         createCommandBuffers();
         createSyncObjects();
     }
@@ -258,6 +263,9 @@ private:
             vkDestroyBuffer(device, uniformBuffers[i], nullptr);
             vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
         }
+        
+        // do I really have to say this again? :|
+        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
         // the descriptor layout should stick around while we may create new graphics pipelines
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -868,7 +876,7 @@ private:
         rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
 
         // specifies the vertex order for faces to be considered front-facing and can be clockwise or counterclockwise
-        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         // the rasterizer can alter the depth values by adding a constant value or biasing them based on a fragment's slope
         rasterizer.depthBiasEnable = VK_FALSE;
@@ -1189,6 +1197,9 @@ private:
 
         // bind the index buffer
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+        // bind the right descriptor set for each frame to the descriptors in the shader
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
         // DRAW BIT*H!!! >:)
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
@@ -1521,12 +1532,83 @@ private:
 
         // define the model, view and projection transformations in the uniform buffer object
         UniformBufferObject ubo{};
-        ubo.model = rotate(mat4(1), time * radians(90), vec3(0, 0, 1));
-        ubo.view = lookAt(vec3(2), vec3(0), vec3(0, 0, 1));
-        ubo.proj = perspective(radians(45), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+        ubo.model = glm::rotate(glm::mat4(1), time * glm::radians(90.0f), glm::vec3(0, 0, 1));
+        ubo.view = glm::lookAt(glm::vec3(2), glm::vec3(0), glm::vec3(0, 0, 1));
+        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
 
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    }
+
+    // Descriptor pool
+    void createDescriptorPool()
+    {
+        // describe which descriptor types our descriptor sets are going to contain and how many of them
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        // allocate one of these descriptors for every frame
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+
+        // specify the maximum number of descriptor sets that may be allocated
+        poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        // create descriptor pool
+        if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create descriptor pool!");
+        }
+    }
+
+    void createDescriptorSets()
+    {
+        // specify the descriptor pool to allocate from, the number of descriptor sets to allocate, and the descriptor layout to base them on
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        allocInfo.pSetLayouts = layouts.data();
+
+        // add a class member to hold the descriptor set handles and allocate them
+        descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+
+        // populate every descriptor
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            // specifies the buffer and the region within it that contains the data for the descriptor
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            // update the configuration of descriptors
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = descriptorSets[i];
+
+            // specify the descriptor set to update and the binding
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+
+            // specify the type of descriptor again
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+
+            // references an array with descriptorCount structs that actually configure the descriptors
+            descriptorWrite.pBufferInfo = &bufferInfo;
+
+            // the updates are applied
+            vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        }
     }
 };
 
